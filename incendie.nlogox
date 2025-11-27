@@ -15,6 +15,7 @@ patches-own [
   en-pousse? ; true si le patch est en train de pousser, false sinon
   taille ; la taille actuelle du patch (0 si il est cramé, taille-max si il est complètement poussé)
   cpt-repousse ; compteur de temps actuel de repousse
+  odeur-pyro ; la quantité d'odeur déposée pas les pyromanes
 ]
 
 pompiers-own [
@@ -35,7 +36,7 @@ pyromanes-own [
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-; procédure qui initialise les variables au début du setup
+;;; procédure qui initialise les variables au début du setup
 to initialisation-variables-patches
   set est-foret? false
   set est-terre? false
@@ -45,17 +46,17 @@ to initialisation-variables-patches
   set en-pousse? false
   set taille 0
   set cpt-repousse 0
+  set odeur-pyro 0
 end
 
-; procédure qui met à jour la couleur d'un patch en fonction de son état
+;;; procédure qui met à jour la couleur d'un patch en fonction de son état
 to set-color-patches
   if est-terre? [set pcolor brown] ; marron pour la terre
   if est-foret? [set pcolor green - 2] ; vert foncé pour la forêt
   if est-base? [set pcolor blue] ; bleu pour la base
-  if est-crame? [set pcolor black] ; noir pour un patch de forêt cramé 
 end
 
-; procédure qui place un pompier aléatoirement dans la base
+;;; procédure qui place un pompier aléatoirement dans la base
 to placer-pompier-dans-la-base [a-pompier]
   let p one-of patches with [est-base?]  ; choisit aléatoirement un patch de la base (est-base? = true)
   ask a-pompier [ ; le place sur le patch
@@ -63,19 +64,54 @@ to placer-pompier-dans-la-base [a-pompier]
   ]
 end
 
-; procédure qui fait se déplacer aléatoirement tous les pompiers
-to deplacement-pompiers
-  ask pompiers [
-    rt random 50 - random 50  
-    fd vitesse      
+;;; procédure qui place un pyromane aléatoirement hors de la base
+to placer-pyromane-hors-de-la-base [a-pyromane]
+  let p one-of patches with [not est-base?]
+  ask a-pyromane [
+    move-to p
   ]
 end
 
-; procédure qui fait se propager la forêt
+;;; procédure qui fait agir les pompiers
+to go-pompiers
+  ask pompiers [
+    
+    ; déplacement
+    rt random 50 - random 50  
+    fd vitesse  
+    
+    ; ..........
+  ]
+end
+
+;;; procédure qui fait agir les pyromanes
+to go-pyromanes
+  ask pyromanes [
+    
+    ; déplacement
+    rt random 50 - random 50  
+    fd vitesse
+    
+    ; dépot d'odeur sur les patches
+    ask patch-here [
+      set odeur-pyro 100
+      
+      ; mise à feu d'un patch de forêt de taille max, avec probabilité de 2%
+      if (est-foret? and not en-feu? and not est-crame? and not en-pousse?) [
+        if random 100 < 2 [
+          set en-feu? true
+          set en-pousse? false
+        ]
+      ]
+    ]
+  ]
+end
+
+;;; procédure qui fait se propager la forêt sur la terre
 to propagation-foret
   ask patches with [est-foret? and not est-crame? and not en-pousse?] [ ; pour tous les patches de forêt ni en pousse, ni cramés
     ask neighbors with [est-terre?] [ ; pour tous leurs voisins qui sont terre
-      if random 100 < vitesse-propagation-foret [ ; pourcentage de chance de devenir forêt
+      if random 100 < vitesse-propagation-foret [ ; pourcentage de chance de se propager dessus
         set est-terre? false 
         set est-foret? true
         set en-pousse? true
@@ -86,21 +122,63 @@ to propagation-foret
   ]
 end
 
-; procédure qui fait grandir les patches en pousse 
+;;; procédure qui fait grandir les patches en état de pousse 
 to pousse-foret
   ask patches with [est-foret? and en-pousse?] [ ; pour tous les patches de forêt en pousse
     set taille taille + 1 ; incrémente la taille
     
-    ; dégradé de couleur en fonction de la taille
-    let t taille / taille-max-patch-foret 
-    set pcolor (green) - t * 2 
+    ; dégradé de couleur du vert clair au foncé en fonction de la taille
+    let t (taille / taille-max) 
+    set pcolor green - (t * 2)
     
-    ; si la taille max est dépassée
-    if taille >= taille-max-patch-foret [
+    ; si la taille max est atteinte
+    if taille >= taille-max [
       set en-pousse? false ; arrêt de la pousse
-      set taille taille-max-patch-foret ; remet la taille au maximum en cas de dépassement
+      set taille taille-max ; remet la taille au maximum en cas de dépassement
       set pcolor (green - 2) ; couleur forêt 
     ]
+  ]
+end
+
+;;; procédure qui fait se propager le feu
+to propagation-feu
+  ask patches with [en-feu? and not est-crame?] [ ; pour tous les patches en feu non cramés 
+    ask neighbors with [est-foret? and not en-feu? and not est-crame? and not en-pousse?] [ ; pour tous leurs voisins qui sont forêt de taille max, pas encore en feu, ni cramés
+      if random 100 < vitesse-propagation-feu [ ; pourcentage de chance de se propager dessus
+        set en-pousse? false 
+        set en-feu? true
+        set pcolor red ; le patch devient rouge
+      ]
+    ]
+
+    ; réduction progressive de la taille
+    set taille taille - 0.5
+    
+    ; si la taille min est atteinte
+    if taille <= 0 [ 
+      set taille 0 ; remet la taille à 0 en cas de dépassement
+      set en-feu? false 
+      set est-crame? true 
+    ]
+    
+    ; si le patch est en feu
+    if en-feu? [ 
+      ; dégradé de couleur du rouge clair au foncé en fonction de la taille
+      let t 1 - (taille / taille-max) 
+      set pcolor red - (t * 4) 
+    ] 
+    
+    ; si le patch est cramé : couleur noire
+    if est-crame? [ set pcolor black ] 
+
+  ]
+end
+
+;;; procédure qui diffuse et fait s'évaporer l'odeur des pyromanes 
+to gestion-odeur
+  diffuse odeur-pyro 0.2 ; diffusion de l'odeur sur les patches voisins
+  ask patches [
+    set odeur-pyro odeur-pyro - 5 ; évaporation de l'odeur progressive
   ]
 end
 
@@ -121,7 +199,12 @@ to setup
     
     ; 3) sinon il est aléatoirement forêt ou terre avec un pourcentage choisi
     if not est-base? [
-      ifelse random 100 < pourcentage-foret [set est-foret? true] [set est-terre? true]
+      ifelse random 100 < pourcentage-foret [
+        set est-foret? true
+        set taille taille-max 
+      ] [
+        set est-terre? true
+      ]
     ]
    
     ; 4) mise à jour de la couleur des patchs en fonction de leur type
@@ -134,8 +217,18 @@ to setup
     set shape "person"
     set size 4
     placer-pompier-dans-la-base self
-    set vitesse 3 
+    set vitesse 2
     set en-jet? false
+  ]
+  
+  ; 6) création des pyromanes
+  create-pyromanes nombre-pyromanes [
+    set color magenta
+    set shape "person"
+    set size 4
+    placer-pyromane-hors-de-la-base self
+    set vitesse 3
+    set en-fuite? false
   ]
   
   reset-ticks
@@ -143,9 +236,19 @@ end
 
 
 to go
-  deplacement-pompiers
+  
+  ; comportement des agents
+  go-pompiers
+  go-pyromanes
+  
+  ; mise à jour du terrain
   propagation-foret
   pousse-foret
+  propagation-feu
+  
+  ; gestion des odeurs
+  gestion-odeur
+  
   wait 0.1
   tick
 end
@@ -155,16 +258,16 @@ end
     <button x="10" y="20" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="55">setup</button>
     <button x="75" y="20" height="40" disableUntilTicks="false" forever="true" kind="Observer" width="55">go</button>
     <slider x="735" step="1" y="90" max="100" width="250" display="nombre-pompiers" height="50" min="0" direction="Horizontal" default="10.0" variable="nombre-pompiers"></slider>
-    <slider x="735" step="1" y="150" max="100" width="250" display="nombre-gardes" height="50" min="0" direction="Horizontal" default="10.0" variable="nombre-gardes"></slider>
-    <slider x="735" step="1" y="210" max="100" width="250" display="nombre-pyromanes" height="50" min="0" direction="Horizontal" default="20.0" variable="nombre-pyromanes"></slider>
+    <slider x="735" step="1" y="150" max="100" width="250" display="nombre-gardes" height="50" min="0" direction="Horizontal" default="4.0" variable="nombre-gardes"></slider>
+    <slider x="735" step="1" y="210" max="100" width="250" display="nombre-pyromanes" height="50" min="0" direction="Horizontal" default="8.0" variable="nombre-pyromanes"></slider>
     <slider x="735" step="1" y="270" max="10" width="250" display="rayon-fuite-pyromanes" height="50" min="0" direction="Horizontal" default="5.0" variable="rayon-fuite-pyromanes"></slider>
     <slider x="735" step="1" y="330" max="10" width="250" display="rayon-detection-gardes" height="50" min="0" direction="Horizontal" default="5.0" variable="rayon-detection-gardes"></slider>
     <slider x="1005" step="1" y="90" max="100" width="250" display="vitesse-propagation-feu" height="50" min="0" direction="Horizontal" default="10.0" variable="vitesse-propagation-feu" units="%"></slider>
-    <slider x="1005" step="1" y="150" max="100" width="250" display="taille-max-patch-foret" height="50" min="0" direction="Horizontal" default="50.0" variable="taille-max-patch-foret"></slider>
+    <slider x="1005" step="1" y="150" max="100" width="250" display="taille-max" height="50" min="0" direction="Horizontal" default="50.0" variable="taille-max"></slider>
     <slider x="735" step="1" y="390" max="100" width="250" display="reserve-max-pompier" height="50" min="0" direction="Horizontal" default="50.0" variable="reserve-max-pompier"></slider>
     <slider x="1005" step="1" y="210" max="30" width="250" display="temps-repousse-crame" height="50" min="0" direction="Horizontal" default="20.0" variable="temps-repousse-crame" units="s"></slider>
     <slider x="1005" step="1" y="35" max="100" width="250" display="pourcentage-foret" height="50" min="0" direction="Horizontal" default="10.0" variable="pourcentage-foret" units="%"></slider>
-    <slider x="1005" step="1" y="270" max="100" width="250" display="vitesse-propagation-foret" height="50" min="0" direction="Horizontal" default="19.0" variable="vitesse-propagation-foret"></slider>
+    <slider x="1005" step="1" y="270" max="100" width="250" display="vitesse-propagation-foret" height="50" min="0" direction="Horizontal" default="10.0" variable="vitesse-propagation-foret"></slider>
   </widgets>
   <info>## WHAT IS IT?
 
