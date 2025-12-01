@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<model version="NetLogo 7.0.2" snapToGrid="true">
+<model version="NetLogo 7.0.0" snapToGrid="true">
   <code><![CDATA[breed [ pompiers pompier]
 breed [ gardes garde ]
 breed [ pyromanes pyromane ]
@@ -21,17 +21,17 @@ patches-own [
 
 pompiers-own [
   eau-restante ; la quantité d'eau restante du pompier
-  en-jet? ; true si le pompier est en train d'éteindre du feu, false sinon
+  etat; l'état en cours du pompier ("en-patrouille", "en-jet", "en-ravitaillement")
   vitesse ; la vitesse du pompier
 ]
 
 gardes-own [
-  en-chasse? ; true si le garde est en train de chasser un pyromane, false sinon
+  etat ; l'état en cours du garde ("en-patrouille", "en-poursuite", "en-suivi-odeur")
   vitesse ; la vitesse du garde
 ]
 
 pyromanes-own [
-  en-fuite? ; true si il est en train de fuire d'un garde, false sinon
+  etat ; l'état en cours du pyromane ("en-fuite", "en-pyromanie")
   vitesse ; la vitesse du pyromane
 ]
 
@@ -58,18 +58,18 @@ to set-color-patches
   if est-base? [set pcolor blue] ; bleu pour la base
 end
 
-;;; procédure qui place un pompier aléatoirement dans la base
-to placer-pompier-dans-la-base [a-pompier]
+;;; procédure qui place une troupe (pompier/garde) aléatoirement dans la base
+to placer-troupe-dans-la-base [la-troupe]
   let p one-of patches with [est-base?]  ; choisit aléatoirement un patch de la base (est-base? = true)
-  ask a-pompier [ ; le place sur le patch
+  ask la-troupe [ ; le place sur le patch choisi
     move-to p
   ]
 end
 
 ;;; procédure qui place un pyromane aléatoirement hors de la base
-to placer-pyromane-hors-de-la-base [a-pyromane]
-  let p one-of patches with [not est-base?]
-  ask a-pyromane [
+to placer-pyromane-hors-de-la-base [le-pyromane]
+  let p one-of patches with [not est-base?] ; choisit aléatoirement un patch hors de la base (est-base? = false)
+  ask le-pyromane [ ; le place sur le patch choisi
     move-to p
   ]
 end
@@ -77,131 +77,195 @@ end
 ;;; procédure qui fait agir les pompiers
 to go-pompiers
   ask pompiers [
-    ; ravitaillement
-    ifelse eau-restante <= 0 [
-      let base min-one-of patches with [est-base?] [
-        distance myself
-      ]
-      if not [est-base?] of patch-here [
-        face base
-        fd vitesse
-      ]
-        if [est-base?] of patch-here [
-          set eau-restante reserve-max-pompier
-          set en-jet? false
-        ]
-      ]
-    
-    ; détection du feu
-    [
+
+    ; si réserve vide : état de ravitaillement
+    if eau-restante <= 0 [
+      set etat "en-ravitaillement"
+    ]
+
+    ; si réserve non vide : cherche un patch de feu à éteindre
+    if eau-restante > 0 [
       let a-eteindre min-one-of patches with [en-feu? and not est-crame?] [
         distance myself
       ]
-      
-    ; déplacement vers patch de en feu
+
+      ; si il y en a un : état d'extinction
       ifelse a-eteindre != nobody [
-        let distance-feu distance a-eteindre
-        
-        if distance-feu > 2 [
-          face a-eteindre
-          fd vitesse
-          set en-jet? false
-        ]
-        ; extinction du feu dans un carré en face du pompier
-        if distance-feu <= 2 [
-          face a-eteindre
-          set en-jet? true
-          eteindre
-          set eau-restante eau-restante - 1
-        ]
+        set etat "en-extinction"
       ] [
-    ; patrouille
-    rt random 50 - random 50
-    fd vitesse
+        ; sinon état de patrouille
+        set etat "en-patrouille"
       ]
     ]
+
+    ; si état de ravitaillement, se ravitaille
+    if etat = "en-ravitaillement" [
+      ravitaillement
+    ]
+
+    ; si état d'extinction de feu
+    if etat = "en-extinction" [
+
+      ; trouve le patch de feu non cramé le plus proche
+      let a-eteindre min-one-of patches with [en-feu? and not est-crame?] [
+        distance myself
+      ]
+
+      ; si il y en a un, calcule la distance
+      ifelse a-eteindre != nobody [
+        let distance-feu distance a-eteindre
+
+        ; si elle est trop longue, s'en rapproche
+        ifelse distance-feu > 2 [
+          face a-eteindre
+          fd vitesse
+        ] [
+          ; sinon il éteint le feu
+          face a-eteindre
+          eteindre
+        ]
+      ] [
+        ; sinon repasse en état de patrouille
+        set etat "en-patrouille"
+      ]
+    ]
+
+    ; si il est en état de patrouille : se déplace aléatoirement
+    if etat = "en-patrouille" [
+      rt random 50 - random 50
+      fd vitesse
+    ]
+
   ]
 end
 
-;;; procédure pour éteindre le feu
-to eteindre
-  ask patches in-cone 2 150 [
-    if (en-feu?) [
-        set en-feu? false
-        set est-crame? true
-        set pcolor black
-        set cpt-repousse temps-repousse-crame
-      ]
+
+;;; procédure d'un pompier pour se ravitailler
+to ravitaillement
+  
+  ; cherche le patch de base le plus proche
+  let base min-one-of patches with [est-base?] [ 
+    distance myself 
+  ]
+      
+  ; si il n'y est pas, s'y dirige
+  if not [est-base?] of patch-here [
+    face base      
+    fd vitesse
+  ]
+      
+  ; sinon il se ravitaille, et passe en état patrouille
+  if [est-base?] of patch-here [
+    set eau-restante reserve-max-pompier
+    set etat "en-patrouille"
   ]
 end
+
+;;; procédure d'un pompier pour éteindre le feu
+to eteindre
+  let nb-extinctions 0 ; nombre de patches de feu éteints
+  
+  ; pour tous les patches à max 2 de distance en face du pompier, avec un angle de 150 degrés
+  ask patches in-cone 2 150 [
+    
+    ; si il est en feu, l'éteindre
+    if en-feu? [ ; 
+      set en-feu? false
+      set est-crame? true
+      set pcolor blue ; couleur bleu pour simuler le jet d'eau
+      set cpt-repousse temps-repousse-crame ; démarre le compteur de repousse
+      set nb-extinctions nb-extinctions + 1 ; incrémente le nombre de patches éteints
+    ]
+  ]
+  set eau-restante eau-restante - nb-extinctions ; maj de la réserve
+end
+
 
 
 ;;; procédure qui fait agir les pyromanes
 to go-pyromanes
   ask pyromanes [
-    let garde-proche min-one-of gardes in-radius rayon-fuite-pyromanes [
+    
+    ; dépose de l'odeur sur son patch
+    ask patch-here [
+        set odeur-pyro 100
+    ]
+    
+    ; détecte le garde le plus proche dans son rayon de détection, et le prend comme menace (nobody sinon)
+    let menace min-one-of gardes in-radius rayon-fuite-pyromanes [
       distance myself
     ]
-    ifelse garde-proche != nobody [
-      face garde-proche
+    
+    ; si il y a une menace : état de fuite
+    ifelse menace != nobody [
+      set etat "en-fuite"
+      face menace
       rt 180
       fd vitesse
-      set en-fuite? true
     ] [
-    ; déplacement
-    rt random 50 - random 50  
-    fd vitesse
-    
-    ; dépot d'odeur sur les patches
-    ask patch-here [
-      set odeur-pyro 100
+      ; sinon : état de pyromanie
+      set etat "en-pyromanie"
       
-      ; mise à feu d'un patch de forêt de taille max, avec probabilité de 2%
-      if (est-foret? and not en-feu? and not est-crame? and not en-pousse?) [
-        if random 100 < 2 [
-          set en-feu? true
-          set en-pousse? false
+      ; déplacement aléatoire
+      rt random 50 - random 50
+      fd vitesse
+      
+      ; met le feu avec une certaine chance à son patch
+      ask patch-here [  
+        if (est-foret? and not en-feu? and not est-crame? and not en-pousse?) [
+          if random 100 < 2 [
+            set en-feu? true
+            set en-pousse? false
+          ]
         ]
       ]
     ]
-  ]
   ]
 end
 
-;;; comportement des gardes
+
+;;; procédure qui fait agir les gardes
 to go-gardes
   ask gardes [
+    
+    ; détecte le pyromane le plus proche dans son rayon de détection, et le prend comme cible (nobody sinon) 
     let cible min-one-of pyromanes in-radius rayon-detection-gardes [
       distance myself
     ]
-    ; chasse un pyromane
+    
+    ; si il y a une cible, état de poursuite
     ifelse cible != nobody [
-      face cible
+      set etat "en-poursuite"
+      face cible 
       fd vitesse
-      set en-chasse? true
-    ] [
-        let trace max-one-of neighbors [odeur-pyro]
-        let seuil-detection 1.0
-      ; suit odeur des pyromanes
-        ifelse [odeur-pyro] of trace > seuil-detection [
-          face trace
-          fd vitesse
-          set en-chasse? true
-        ]
-        [
-        ; patrouille
-          rt random 50 - random 50
-          fd vitesse
-          set en-chasse? false
-        ]
+    ]
+    [
+      ; sinon recherche l'odeur la plus forte
+      let trace max-one-of neighbors [odeur-pyro]
+      let seuil-detection 1.0
+      
+      ; si il y a une odeur assez forte : état de suivi d'odeur
+      ifelse [odeur-pyro] of trace > seuil-detection [
+        set etat "en-suivi-odeur"
+        face trace
+        fd vitesse
+      ] 
+      [
+        ; sinon état de patrouille : déplacements aléatoires
+        set etat "en-patrouille"
+        rt random 50 - random 50
+        fd vitesse
       ]
-    ; tue le pyromane si il le rattrape
+    ]
+
+    ; si un pyromane est assez proche : il est attrapé (die) 
     let pyromane-proche one-of pyromanes-here
     if pyromane-proche != nobody [
-      ask pyromane-proche [die]
+      ask pyromane-proche [ die ]
     ]
   ]
 end
+
 
 
 ;;; procédure qui fait se propager la forêt sur la terre
@@ -219,7 +283,7 @@ to propagation-foret
   ]
 end
 
-;;; procédure qui fait grandir les patches en état de pousse 
+;;; procédure qui fait grandir les patches de forêt en état de pousse 
 to pousse-foret
   ask patches with [est-foret? and en-pousse?] [ ; pour tous les patches de forêt en pousse
     set taille taille + 1 ; incrémente la taille
@@ -237,14 +301,17 @@ to pousse-foret
   ]
 end
 
-;;; procédure de repousse après avoir été cramé
+;;; procédure qui fait repousser les patches de forêt cramés
 to repousse-crame
-   ask patches with [est-crame?] [
-      set cpt-repousse cpt-repousse - 1
-      if (cpt-repousse = 0) [
+  ask patches with [est-crame?] [
+    set cpt-repousse cpt-repousse - 1 ; décrémente le compteur de repousse
+    
+    ; si le compteur est terminé : le patch redevient forêt en pousse de taille 0
+      if (cpt-repousse <= 0) [
         set est-crame? false
         set est-foret? true
         set en-pousse? true
+        set taille 0
       ]
     ]
 end
@@ -328,9 +395,10 @@ to setup
     set color cyan
     set shape "person"
     set size 4
-    placer-pompier-dans-la-base self
+    placer-troupe-dans-la-base self ; apparait dans la base
     set vitesse 2
-    set en-jet? false
+    set eau-restante 0 ; réserve d'eau vide au départ
+    set etat "en-patrouille" ; état de patrouille au départ
   ]
   
   ; 6) création des pyromanes
@@ -338,18 +406,19 @@ to setup
     set color magenta
     set shape "person"
     set size 4
-    placer-pyromane-hors-de-la-base self
+    placer-pyromane-hors-de-la-base self ; apparait hors de la base
     set vitesse 3
-    set en-fuite? false
+    set etat "en-pyromanie" ; état de pyromanie au départ
   ]
   
+  ; 7) création des gardes
   create-gardes nombre-gardes [
     set color yellow
     set shape "person"
     set size 4
-    placer-pompier-dans-la-base self ; même spawn que les pompiers
+    placer-troupe-dans-la-base self ; apparait dans la base
     set vitesse 2
-    set en-chasse? false
+    set etat "en-patrouille" ; état de patrouille au départ
   ]
   
   reset-ticks
