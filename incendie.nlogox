@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<model version="NetLogo 7.0.0" snapToGrid="true">
-  <code><![CDATA[breed [ pompiers pompier]
+<model version="NetLogo 7.0.2" snapToGrid="true">
+  <code><![CDATA[globals [
+  vitesse-urgence-pompier
+  urgence-base?
+]
+breed [ pompiers pompier]
 breed [ gardes garde ]
 breed [ pyromanes pyromane ]
 
@@ -17,22 +21,25 @@ patches-own [
   cpt-repousse ; compteur de temps actuel de repousse
   odeur-pyro ; la quantité d'odeur déposée pas les pyromanes
   taille-base ; taille de la base
+  etat-base ; état de la base (indemne, endommagée ou détruite)
+  durabilite-base ; durabilité de la base face au feu
 ]
 
 pompiers-own [
   eau-restante ; la quantité d'eau restante du pompier
-  etat; l'état en cours du pompier ("en-patrouille", "en-jet", "en-ravitaillement")
+  etat; l'état en cours du pompier ("en-patrouille", "en-extinction", "en-ravitaillement")
   vitesse ; la vitesse du pompier
 ]
 
 gardes-own [
-  etat ; l'état en cours du garde ("en-patrouille", "en-poursuite", "en-suivi-odeur")
+  etat ; l'état en cours du garde ("en-patrouille", "en-poursuite", "en-suivi-odeur", "arrestation")
   vitesse ; la vitesse du garde
 ]
 
 pyromanes-own [
-  etat ; l'état en cours du pyromane ("en-fuite", "en-pyromanie")
+  etat ; l'état en cours du pyromane ("en-fuite", "en-pyromanie", "capture")
   vitesse ; la vitesse du pyromane
+  mon-garde ; le garde qui capture le pyroname
 ]
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -48,8 +55,10 @@ to initialisation-variables-patches
   set taille 0
   set cpt-repousse temps-repousse-crame
   set odeur-pyro 0
-  set taille-base 16
+  set taille-base 10
+  set durabilite-base 0
 end
+
 
 ;;; procédure qui met à jour la couleur d'un patch en fonction de son état
 to set-color-patches
@@ -57,6 +66,7 @@ to set-color-patches
   if est-foret? [set pcolor green - 2] ; vert foncé pour la forêt
   if est-base? [set pcolor blue] ; bleu pour la base
 end
+
 
 ;;; procédure qui place une troupe (pompier/garde) aléatoirement dans la base
 to placer-troupe-dans-la-base [la-troupe]
@@ -66,6 +76,7 @@ to placer-troupe-dans-la-base [la-troupe]
   ]
 end
 
+
 ;;; procédure qui place un pyromane aléatoirement hors de la base
 to placer-pyromane-hors-de-la-base [le-pyromane]
   let p one-of patches with [not est-base?] ; choisit aléatoirement un patch hors de la base (est-base? = false)
@@ -74,68 +85,67 @@ to placer-pyromane-hors-de-la-base [le-pyromane]
   ]
 end
 
+
 ;;; procédure qui fait agir les pompiers
 to go-pompiers
   ask pompiers [
+    
+    let a-eteindre nobody
+    if urgence-base? [
+      set vitesse vitesse-urgence-pompier
+      set etat "en-urgence"
+      set a-eteindre min-one-of patches with [est-base? and en-feu? and not est-crame?] [distance myself]
+      if a-eteindre = nobody [
+        let base min-one-of patches with [est-base?] [distance myself]
+      ]
+    ]
+    if not urgence-base? [
+      set vitesse 3
+    ]
+    ; si réserve non vide : cherche un patch de feu à éteindre
+    if etat != "en-urgence" and eau-restante > 0 [
+      ; vérification si il y a du feu à éteindre
+      set a-eteindre min-one-of patches with [en-feu? and not est-crame?] [distance myself]
+    ]
+    ; état de patrouille (par défaut)
+    set etat "en-patrouille"
 
-    ; si réserve vide : état de ravitaillement
+    ; si un feu est dispo à éteindre : état d'extinction
+    if a-eteindre != nobody [
+      set etat "en-extinction"
+    ]
+    
+    ; si la réserve est vide
     if eau-restante <= 0 [
       set etat "en-ravitaillement"
     ]
-
-    ; si réserve non vide : cherche un patch de feu à éteindre
-    if eau-restante > 0 [
-      let a-eteindre min-one-of patches with [en-feu? and not est-crame?] [
-        distance myself
-      ]
-
-      ; si il y en a un : état d'extinction
-      ifelse a-eteindre != nobody [
-        set etat "en-extinction"
-      ] [
-        ; sinon état de patrouille
-        set etat "en-patrouille"
-      ]
-    ]
-
+      
     ; si état de ravitaillement, se ravitaille
     if etat = "en-ravitaillement" [
       ravitaillement
     ]
 
     ; si état d'extinction de feu
-    if etat = "en-extinction" [
-
-      ; trouve le patch de feu non cramé le plus proche
-      let a-eteindre min-one-of patches with [en-feu? and not est-crame?] [
-        distance myself
-      ]
-
-      ; si il y en a un, calcule la distance
-      ifelse a-eteindre != nobody [
-        let distance-feu distance a-eteindre
-
-        ; si elle est trop longue, s'en rapproche
-        ifelse distance-feu > 2 [
-          face a-eteindre
-          fd vitesse
-        ] [
-          ; sinon il éteint le feu
-          face a-eteindre
-          eteindre
+    if etat = "en-extinction" or etat = "en-urgence" [
+      
+      ; calcule la distance entre le pompier et le feu
+      let distance-feu distance a-eteindre
+      
+      ; si elle est trop longue, s'en rapproche
+      ifelse distance-feu > 2 [
+        face a-eteindre
+        fd vitesse
+      ] [         
+        ; sinon il éteint le feu  
+        face a-eteindre
+        eteindre
         ]
-      ] [
-        ; sinon repasse en état de patrouille
-        set etat "en-patrouille"
-      ]
     ]
-
     ; si il est en état de patrouille : se déplace aléatoirement
     if etat = "en-patrouille" [
       rt random 50 - random 50
       fd vitesse
     ]
-
   ]
 end
 
@@ -144,7 +154,7 @@ end
 to ravitaillement
   
   ; cherche le patch de base le plus proche
-  let base min-one-of patches with [est-base?] [ 
+  let base min-one-of patches with [est-base? and durabilite-base > 0] [ 
     distance myself 
   ]
       
@@ -155,37 +165,56 @@ to ravitaillement
   ]
       
   ; sinon il se ravitaille, et passe en état patrouille
-  if [est-base?] of patch-here [
+  if [est-base? and durabilite-base > 0] of patch-here [
     set eau-restante reserve-max-pompier
     set etat "en-patrouille"
   ]
 end
+
 
 ;;; procédure d'un pompier pour éteindre le feu
 to eteindre
   let nb-extinctions 0 ; nombre de patches de feu éteints
   
   ; pour tous les patches à max 2 de distance en face du pompier, avec un angle de 150 degrés
-  ask patches in-cone 2 150 [
+  ask patches in-radius 2 [
     
     ; si il est en feu, l'éteindre
-    if en-feu? [ ; 
+    if en-feu? [
       set en-feu? false
-      set est-crame? true
       set pcolor blue ; couleur bleu pour simuler le jet d'eau
       set cpt-repousse temps-repousse-crame ; démarre le compteur de repousse
       set nb-extinctions nb-extinctions + 1 ; incrémente le nombre de patches éteints
+      if not est-base? [
+        set est-crame? true
+      ]
     ]
   ]
   set eau-restante eau-restante - nb-extinctions ; maj de la réserve
 end
 
 
-
 ;;; procédure qui fait agir les pyromanes
 to go-pyromanes
   ask pyromanes [
-    
+    ; suis le garde qui l'a capturé
+    ifelse etat = "capture" [
+      if mon-garde != nobody [
+      move-to mon-garde
+      set color orange
+      ]
+      ; meurt quand il arrive à la base
+      if [est-base?] of patch-here [
+        die
+      ]
+    ][
+    ; esquive du feu
+    let danger min-one-of patches in-radius 5 with [est-base? or en-feu?] [distance myself]
+    if danger != nobody [
+      face danger
+      rt 180
+      fd vitesse
+    ]
     ; dépose de l'odeur sur son patch
     ask patch-here [
         set odeur-pyro 100
@@ -211,8 +240,8 @@ to go-pyromanes
       fd vitesse
       
       ; met le feu avec une certaine chance à son patch
-      ask patch-here [  
-        if (est-foret? and not en-feu? and not est-crame? and not en-pousse?) [
+      ask patch-ahead 1 [  
+        if (est-foret? and not en-feu? and not est-crame? and not en-pousse? and not est-base?) [
           if random 100 < 2 [
             set en-feu? true
             set en-pousse? false
@@ -220,6 +249,9 @@ to go-pyromanes
         ]
       ]
     ]
+    ]
+    ; meurt s'il touche le feu
+    mort-feu
   ]
 end
 
@@ -228,8 +260,26 @@ end
 to go-gardes
   ask gardes [
     
+    ; le garde repère sa distance par rapport à la base
+    let base min-one-of patches with [est-base?] [distance myself]
+    ; ramène le pyromane capturé à la base
+    ifelse etat = "arrestation" [
+      ifelse not [est-base?] of patch-here [
+        face base
+        fd vitesse
+      ][
+        set etat "en-patrouille"
+      ]
+    ] [
+    ; esquive du feu
+    let danger min-one-of patches in-radius 5 with [en-feu?] [distance myself]
+    if danger != nobody [
+      face danger
+      rt 180
+      fd vitesse
+    ]
     ; détecte le pyromane le plus proche dans son rayon de détection, et le prend comme cible (nobody sinon) 
-    let cible min-one-of pyromanes in-radius rayon-detection-gardes [
+      let cible min-one-of pyromanes with [mon-garde = nobody] in-radius rayon-detection-gardes [
       distance myself
     ]
     
@@ -258,19 +308,28 @@ to go-gardes
       ]
     ]
 
-    ; si un pyromane est assez proche : il est attrapé (die) 
-    let pyromane-proche one-of pyromanes-here
+    ; si un pyromane est assez proche : il est attrapé
+      let pyromane-proche one-of pyromanes-here with [mon-garde = nobody]
     if pyromane-proche != nobody [
-      ask pyromane-proche [ die ]
+      ask pyromane-proche [ set etat "capture" set mon-garde myself ]
+      set etat "arrestation"
     ]
+    ]
+    ; meurt s'il touche le feu
+    mort-feu
   ]
 end
 
 
+;;; procédure de mort en contact du feu
+to mort-feu
+  if [en-feu?] of patch-here [die]
+end
+
 
 ;;; procédure qui fait se propager la forêt sur la terre
 to propagation-foret
-  ask patches with [est-foret? and not est-crame? and not en-pousse?] [ ; pour tous les patches de forêt ni en pousse, ni cramés
+  ask patches with [est-foret? and not est-crame? and not en-pousse? and not est-base?] [ ; pour tous les patches de forêt ni en pousse, ni cramés, ni bases
     ask neighbors with [est-terre?] [ ; pour tous leurs voisins qui sont terre
       if random 100 < vitesse-propagation-foret [ ; pourcentage de chance de se propager dessus
         set est-terre? false 
@@ -282,6 +341,7 @@ to propagation-foret
     ]
   ]
 end
+
 
 ;;; procédure qui fait grandir les patches de forêt en état de pousse 
 to pousse-foret
@@ -300,6 +360,7 @@ to pousse-foret
     ]
   ]
 end
+
 
 ;;; procédure qui fait repousser les patches de forêt cramés
 to repousse-crame
@@ -320,14 +381,20 @@ end
 ;;; procédure qui fait se propager le feu
 to propagation-feu
   ask patches with [en-feu? and not est-crame?] [ ; pour tous les patches en feu non cramés 
-    ask neighbors with [est-foret? and not en-feu? and not est-crame? and not en-pousse?] [ ; pour tous leurs voisins qui sont forêt de taille max, pas encore en feu, ni cramés
-      if random 100 < vitesse-propagation-feu [ ; pourcentage de chance de se propager dessus
-        set en-pousse? false 
-        set en-feu? true
-        set pcolor red ; le patch devient rouge
+    if est-base? [
+      set durabilite-base durabilite-base - 1
+      if durabilite-base < 0 [
+          set durabilite-base 0
+        ]
+      ]
+    ask neighbors with [(est-foret? or est-base?) and not en-feu? and not est-crame? and not en-pousse?] [ ; pour tous leurs voisins qui sont forêt de taille max, pas encore en feu, ni cramés
+        if random 100 < vitesse-propagation-feu [ ; pourcentage de chance de se propager dessus
+          set en-pousse? false 
+          set en-feu? true
+          set pcolor red ; le patch devient rouge  
       ]
     ]
-
+    if not est-base? [
     ; réduction progressive de la taille
     set taille taille - 0.5
     
@@ -350,9 +417,36 @@ to propagation-feu
       set pcolor black
       set cpt-repousse temps-repousse-crame
     ] 
-
+    ]
   ]
 end
+
+
+;;; procédure qui met à jour l'état de la base
+to gestion-base
+  ask patches with [est-base?] [
+    
+    let pourcentage-base durabilite-base / durabilite-base-max
+    ifelse durabilite-base <= 0 [
+      set etat-base "détruite"
+      set pcolor black
+    ] [
+      ifelse pourcentage-base >= 0.76 [
+        set etat-base "indemne"
+        set pcolor blue
+      ] [
+        ifelse pourcentage-base >= 0.26 [
+          set etat-base "endommagée"
+          set pcolor violet
+        ] [
+          set etat-base "critique"
+          set pcolor red
+        ]
+      ]
+    ]
+  ]
+end
+
 
 ;;; procédure qui diffuse et fait s'évaporer l'odeur des pyromanes 
 to gestion-odeur
@@ -371,9 +465,11 @@ to setup
     ; 1) initialisation des variables des patches
     initialisation-variables-patches 
  
-    ; 2) si le patch est dans la zone du coin en bas à droite, taille 16x16, alors il est base
+    ; 2) création de la base
     if (pxcor >= (0 - taille-base / 2) and pxcor < (0 + taille-base / 2) and pycor >= (0 - taille-base / 2) and pycor < (0 + taille-base / 2)) [
       set est-base? true 
+      set etat-base "indemne"
+      set durabilite-base durabilite-base-max
     ]
     
     ; 3) sinon il est aléatoirement forêt ou terre avec un pourcentage choisi
@@ -389,14 +485,17 @@ to setup
     ; 4) mise à jour de la couleur des patchs en fonction de leur type
     set-color-patches
   ]
+  ; pour l'état d'urgence
+  set urgence-base? false
+  set vitesse-urgence-pompier 5
   
   ; 5) création des pompiers
   create-pompiers nombre-pompiers [
     set color cyan
     set shape "person"
-    set size 4
+    set size 3
     placer-troupe-dans-la-base self ; apparait dans la base
-    set vitesse 2
+    set vitesse 3
     set eau-restante 0 ; réserve d'eau vide au départ
     set etat "en-patrouille" ; état de patrouille au départ
   ]
@@ -405,17 +504,18 @@ to setup
   create-pyromanes nombre-pyromanes [
     set color magenta
     set shape "person"
-    set size 4
+    set size 3
     placer-pyromane-hors-de-la-base self ; apparait hors de la base
     set vitesse 3
     set etat "en-pyromanie" ; état de pyromanie au départ
+    set mon-garde nobody
   ]
   
   ; 7) création des gardes
   create-gardes nombre-gardes [
     set color yellow
     set shape "person"
-    set size 4
+    set size 3
     placer-troupe-dans-la-base self ; apparait dans la base
     set vitesse 2
     set etat "en-patrouille" ; état de patrouille au départ
@@ -426,7 +526,8 @@ end
 
 
 to go
-  
+  ; définit l'état d'urgence
+  set urgence-base? any? patches with [est-base? and en-feu? and durabilite-base > 0]
   ; comportement des agents
   go-pompiers
   go-pyromanes
@@ -437,6 +538,7 @@ to go
   pousse-foret
   propagation-feu
   repousse-crame
+  gestion-base
   
   ; gestion des odeurs
   gestion-odeur
@@ -446,20 +548,21 @@ to go
 end
 ]]></code>
   <widgets>
-    <view x="230" wrappingAllowedX="true" y="10" frameRate="30.0" minPycor="-32" height="425" showTickCounter="true" patchSize="6.48" fontSize="10" wrappingAllowedY="true" width="425" tickCounterLabel="ticks" maxPycor="32" updateMode="0" maxPxcor="32" minPxcor="-32"></view>
-    <button x="10" y="20" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="55">setup</button>
-    <button x="75" y="20" height="40" disableUntilTicks="false" forever="true" kind="Observer" width="55">go</button>
-    <slider x="735" step="1" y="90" max="100" width="250" display="nombre-pompiers" height="50" min="0" direction="Horizontal" default="30.0" variable="nombre-pompiers"></slider>
-    <slider x="735" step="1" y="150" max="5" width="250" display="nombre-gardes" height="50" min="0" direction="Horizontal" default="5.0" variable="nombre-gardes"></slider>
-    <slider x="735" step="1" y="210" max="20" width="250" display="nombre-pyromanes" height="50" min="0" direction="Horizontal" default="10.0" variable="nombre-pyromanes"></slider>
-    <slider x="735" step="1" y="270" max="10" width="250" display="rayon-fuite-pyromanes" height="50" min="0" direction="Horizontal" default="5.0" variable="rayon-fuite-pyromanes"></slider>
-    <slider x="735" step="1" y="330" max="10" width="250" display="rayon-detection-gardes" height="50" min="0" direction="Horizontal" default="5.0" variable="rayon-detection-gardes"></slider>
-    <slider x="1005" step="1" y="90" max="100" width="250" display="vitesse-propagation-feu" height="50" min="0" direction="Horizontal" default="10.0" variable="vitesse-propagation-feu" units="%"></slider>
-    <slider x="1005" step="1" y="150" max="100" width="250" display="taille-max" height="50" min="0" direction="Horizontal" default="50.0" variable="taille-max"></slider>
-    <slider x="735" step="1" y="390" max="100" width="250" display="reserve-max-pompier" height="50" min="0" direction="Horizontal" default="50.0" variable="reserve-max-pompier"></slider>
-    <slider x="1005" step="1" y="210" max="30" width="250" display="temps-repousse-crame" height="50" min="0" direction="Horizontal" default="4.0" variable="temps-repousse-crame" units="s"></slider>
-    <slider x="1005" step="1" y="35" max="100" width="250" display="pourcentage-foret" height="50" min="0" direction="Horizontal" default="17.0" variable="pourcentage-foret" units="%"></slider>
-    <slider x="1005" step="1" y="270" max="100" width="250" display="vitesse-propagation-foret" height="50" min="0" direction="Horizontal" default="10.0" variable="vitesse-propagation-foret"></slider>
+    <view x="265" wrappingAllowedX="true" y="5" frameRate="30.0" minPycor="-48" height="519" showTickCounter="true" patchSize="5.31" fontSize="10" wrappingAllowedY="true" width="519" tickCounterLabel="ticks" maxPycor="48" updateMode="0" maxPxcor="48" minPxcor="-48"></view>
+    <slider x="5" step="1" y="5" max="200" width="250" display="nombre-pompiers" height="50" min="0" direction="Horizontal" default="81.0" variable="nombre-pompiers"></slider>
+    <slider x="5" step="1" y="60" max="100" width="250" display="reserve-max-pompier" height="50" min="0" direction="Horizontal" default="100.0" variable="reserve-max-pompier"></slider>
+    <slider x="5" step="1" y="125" max="20" width="250" display="nombre-gardes" height="50" min="0" direction="Horizontal" default="0.0" variable="nombre-gardes"></slider>
+    <slider x="5" step="1" y="180" max="10" width="250" display="rayon-detection-gardes" height="50" min="0" direction="Horizontal" default="5.0" variable="rayon-detection-gardes"></slider>
+    <slider x="5" step="1" y="245" max="20" width="250" display="nombre-pyromanes" height="50" min="0" direction="Horizontal" default="20.0" variable="nombre-pyromanes"></slider>
+    <slider x="5" step="1" y="300" max="10" width="250" display="rayon-fuite-pyromanes" height="50" min="0" direction="Horizontal" default="5.0" variable="rayon-fuite-pyromanes"></slider>
+    <slider x="795" step="1" y="10" max="100" width="250" display="pourcentage-foret" height="50" min="0" direction="Horizontal" default="17.0" variable="pourcentage-foret" units="%"></slider>
+    <slider x="795" step="1" y="65" max="100" width="250" display="taille-max" height="50" min="0" direction="Horizontal" default="50.0" variable="taille-max"></slider>
+    <slider x="795" step="1" y="120" max="30" width="250" display="temps-repousse-crame" height="50" min="0" direction="Horizontal" default="4.0" variable="temps-repousse-crame" units="s"></slider>
+    <slider x="795" step="1" y="175" max="100" width="250" display="vitesse-propagation-foret" height="50" min="0" direction="Horizontal" default="10.0" variable="vitesse-propagation-foret"></slider>
+    <slider x="795" step="0.5" y="245" max="50" width="250" display="vitesse-propagation-feu" height="50" min="0" direction="Horizontal" default="22.0" variable="vitesse-propagation-feu" units="%"></slider>
+    <slider x="795" step="1" y="315" max="100" width="250" display="durabilite-base-max" height="50" min="1" direction="Horizontal" default="73.0" variable="durabilite-base-max"></slider>
+    <button x="10" y="365" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="90">setup</button>
+    <button x="140" y="365" height="40" disableUntilTicks="false" forever="true" kind="Observer" width="85">go</button>
   </widgets>
   <info>## WHAT IS IT?
 
