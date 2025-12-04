@@ -181,47 +181,48 @@ to go-pompiers
   ]
 end
 
-
-
-;;; procédure d'un pompier pour se ravitailler
+;;; procédure qui fait se ravitailler le pompier
 to ravitaillement
   
-  ; cherche le patch de base le plus proche
-  let base min-one-of patches with [est-base? and durabilite-base > 0] [ 
-    distance myself 
-  ]
+  ; cherche le patch de base non détruit le plus proche
+  let base-utilisable min-one-of patches with [est-base? and durabilite-base > 0] [distance myself]
+  
+  ; si il existe
+  if base-utilisable != nobody [
+    
+    ; si le pompier n'y est pas
+    ifelse not [est-base? and durabilite-base > 0] of patch-here [
       
-  ; si il n'y est pas, s'y dirige
-  if not [est-base?] of patch-here [
-    face base      
-    fd vitesse
-  ]
+      ; s'y dirige
+      face base-utilisable      
+      fd vitesse
+    ] [
       
-  ; sinon il se ravitaille, et passe en état patrouille
-  if [est-base? and durabilite-base > 0] of patch-here [
-    set eau-restante reserve-max-pompier
-    set etat "en-patrouille"
+      ; sinon il y est : se ravitaille
+      set eau-restante reserve-max-pompier
+      set etat "en-patrouille"
+    ]
   ]
 end
 
 
 ;;; procédure d'un pompier pour éteindre le feu
 to eteindre
-  let nb-extinctions 0 ; nombre de patches de feu éteints
   
-  ; pour tous les patches à 2 de distance
-  ask patches in-radius 2 [
-    
-    ; si il est en feu, l'éteindre
-    if en-feu? [
-      set en-feu? false
-      set est-eteint? true
-      set pcolor white ; couleur blanche pour simuler le jet d'eau
-      set cpt-reprise-pousse 5 ; démarre le compteur de repousse
-      set nb-extinctions nb-extinctions + 1 ; incrémente le nombre de patches éteints
-    ]
+  ; nombre de patches de feu éteints pendant le tick
+  let nb-extinctions 0 
+  
+  ; pour tous les patches à 2 de distance en feu
+  ask patches in-radius 2 with [en-feu?] [
+    set en-feu? false
+    set est-eteint? true ; passe en état "éteint"
+    set pcolor white ; devient blanc temporairement pour simuler le jet d'eau
+    set cpt-reprise-pousse 5 ; démarre le compteur de repousse de 5 ticks 
+    set nb-extinctions nb-extinctions + 1 ; incrémente le nombre de patches éteints
   ]
-  set eau-restante eau-restante - nb-extinctions ; maj de la réserve
+  
+  ; décrémente l'eau restante 
+  set eau-restante eau-restante - nb-extinctions 
 end
 
 
@@ -393,8 +394,8 @@ to pousse-foret
 end
 
 
-;;; procédure qui fait repousser les patches de forêt cramés
-to repousse-crame
+;;; procédure qui fait repousser les patches de forêt cramés, et reprend la pousse de ceux éteints
+to gestion-crame-eteint
   ask patches with [est-crame?] [
     set cpt-repousse cpt-repousse - 1 ; décrémente le compteur de repousse
     
