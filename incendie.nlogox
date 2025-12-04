@@ -229,61 +229,97 @@ end
 ;;; procédure qui fait agir les pyromanes
 to go-pyromanes
   ask pyromanes [
-    ; suis le garde qui l'a capturé
-    ifelse etat = "en-capture" [
-      if mon-garde != nobody [
-      move-to mon-garde
-      set color orange
+    
+    ;; --------------- CHOIX DE L'ETAT ---------------
+    
+    ; si le pyromane est capturé : on ne change pas l'état
+    if etat != "en-capture" [
+      
+      ; détecte le garde le plus proche dans son rayon de détection
+      let menace min-one-of gardes in-radius rayon-fuite-pyromanes [distance myself]
+      
+      ; si il y a une menace : état de fuite
+      ifelse menace != nobody [
+        set etat "en-fuite"
+      ] [
+        ; sinon : état de pyromanie
+        set etat "en-pyromanie"
       ]
-      ; meurt quand il arrive à la base
+    ]
+    
+    ;; --------------- COMPORTEMENT EN FONCTION DE L'ETAT ---------------
+    
+    ;; CAPTURE
+    if etat = "en-capture" [
+      
+      ; suit le garde qui l'a capturé
+      if mon-garde != nobody [
+        move-to mon-garde
+        set color orange
+      ]
+      
+      ; si il est arrivé à la base, il disparait
       if [est-base?] of patch-here [
         die
       ]
-    ][
-    ; esquive du feu
-    let danger min-one-of patches in-radius 5 with [est-base? or en-feu?] [distance myself]
-    if danger != nobody [
-      face danger
-      rt 180
-      fd vitesse
     ]
-    ; dépose de l'odeur sur son patch
-    ask patch-here [
+    
+    ;; FUITE ET PYROMANIE
+    if etat = "en-fuite" or etat = "pyromanie" [
+      
+      ; cherche un patch de feu ou de base dans un rayon de 5
+      let danger min-one-of patches in-radius 5 with [est-base? or en-feu?] [distance myself]
+      
+      ; si il y en a un, part à l'opposé
+      if danger != nobody [
+        face danger
+        rt 180
+        fd vitesse
+      ]
+      
+      ; dépose de l'odeur
+      ask patch-here [
         set odeur-pyro 100
+      ]
     ]
     
-    ; détecte le garde le plus proche dans son rayon de détection, et le prend comme menace (nobody sinon)
-    let menace min-one-of gardes in-radius rayon-fuite-pyromanes [
-      distance myself
+    ;; FUITE
+    if etat = "en-fuite" [
+      
+      ; cherche un garde dans son rayon de fuite
+      let menace min-one-of gardes in-radius rayon-fuite-pyromanes [distance myself]
+      
+      ; si il y en a un, part à l'oppose
+      if menace != nobody [
+        face menace
+        rt 180
+        fd vitesse
+      ]
     ]
     
-    ; si il y a une menace : état de fuite
-    ifelse menace != nobody [
-      set etat "en-fuite"
-      face menace
-      rt 180
-      fd vitesse
-    ] [
-      ; sinon : état de pyromanie
-      set etat "en-pyromanie"
+    ;; PYROMANIE
+    if etat = "en-pyromanie" [
       
       ; déplacement aléatoire
       rt random 50 - random 50
       fd vitesse
       
-      ; met le feu avec une certaine chance à son patch
+      ; met le feu avec une certaine chance au patch devant lui
       ask patch-ahead 1 [  
-        if (est-foret? and not en-feu? and not est-crame? and not en-pousse? and not est-base?) [
-          if random 100 < 2 [
+        
+        ; si c'est un patch de forêt de taille max, non cramé et pas déjà en feu
+        if (est-foret? and not en-feu? and not est-crame? and not en-pousse?) [
+          
+          ; chance de déclencher un feu
+          if random 100 < chance-declencher-feu [
             set en-feu? true
             set en-pousse? false
           ]
         ]
       ]
     ]
-    ]
-    ; meurt s'il touche le feu
-    mort-feu
+    
+    mort-feu ; meurt si il touche du feu
   ]
 end
 
@@ -579,7 +615,7 @@ to go
   propagation-foret
   pousse-foret
   propagation-feu
-  repousse-crame
+  gestion-crame-eteint
   gestion-base
   
   ; gestion des odeurs
@@ -607,6 +643,7 @@ end
     <button x="140" y="365" height="40" disableUntilTicks="false" forever="true" kind="Observer" width="85">go</button>
     <slider x="795" step="2" y="380" max="30" width="250" display="taille-base" height="50" min="0" direction="Horizontal" default="10.0" variable="taille-base"></slider>
     <slider x="1185" step="0.01" y="65" max="0.2" width="250" display="vitesse-simulation" height="50" min="0" direction="Horizontal" default="0.15" variable="vitesse-simulation"></slider>
+    <slider x="1185" step="0.1" y="135" max="5" width="250" display="chance-declencher-feu" height="50" min="0" direction="Horizontal" default="2.0" variable="chance-declencher-feu" units="%"></slider>
   </widgets>
   <info>## WHAT IS IT?
 
