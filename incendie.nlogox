@@ -178,6 +178,9 @@ to go-pompiers
         ]
       ] 
     ]
+    
+    ; si l'option est activée, il meurt au contact du feu
+    if pompiers-mort-feu [mort-feu]
   ]
 end
 
@@ -267,15 +270,29 @@ to go-pyromanes
     ;; FUITE ET PYROMANIE
     if etat = "en-fuite" or etat = "pyromanie" [
       
-      ; cherche un patch de feu ou de base dans un rayon de 5
-      let danger min-one-of patches in-radius 5 with [est-base? or en-feu?] [distance myself]
-      
-      ; si il y en a un, part à l'opposé
-      if danger != nobody [
-        face danger
-        rt 180
-        fd vitesse
+      ; si il est affecté par le feu
+      if pyromanes-mort-feu [
+        
+        ; cherche un patch de feu dans un rayon de 5
+        let danger1 min-one-of patches in-radius 5 with [en-feu?] [distance myself]
+        
+        ; si il y en a un, part à l'opposé
+        if danger1 != nobody [
+          face danger1
+          rt 180
+          fd vitesse
+        ]
       ]
+      
+      ; et dans tous les cas, cherche un patch de base dans un rayon de 5
+      let danger2 min-one-of patches in-radius 5 with [est-base?] [distance myself]
+      
+      ; si il y en a un, le fuit
+        if danger2 != nobody [
+          face danger2
+          rt 180
+          fd vitesse
+        ]
       
       ; dépose de l'odeur
       ask patch-here [
@@ -289,7 +306,7 @@ to go-pyromanes
       ; cherche un garde dans son rayon de fuite
       let menace min-one-of gardes in-radius rayon-fuite-pyromanes [distance myself]
       
-      ; si il y en a un, part à l'oppose
+      ; si il y en a un, le fuit
       if menace != nobody [
         face menace
         rt 180
@@ -319,87 +336,147 @@ to go-pyromanes
       ]
     ]
     
-    mort-feu ; meurt si il touche du feu
+    ; si l'option est activée, il meurt au contact du feu
+    if pyromanes-mort-feu [mort-feu]
   ]
 end
-
 
 ;;; procédure qui fait agir les gardes
 to go-gardes
   ask gardes [
     
-    ; le garde repère sa distance par rapport à la base
-    let base min-one-of patches with [est-base?] [distance myself]
-    ; ramène le pyromane capturé à la base
-    ifelse etat = "en-arrestation" [
+    ;; --------------- CHOIX DE L'ETAT ---------------
+    
+    ; cherche un pyromane proche
+    let pyromane-proche one-of pyromanes in-radius 1 with [mon-garde = nobody]
+    
+    ; si il y en a un : passe en état d'arrestation
+    if pyromane-proche != nobody [
+      
+      set etat "en-arrestation"
+      
+      ; et le pyromane passe en état de capture + le garde devient son "mon-garde"
+      ask pyromane-proche [
+        set etat "en-capture" 
+        set mon-garde myself 
+      ]
+    ]
+    
+    ; si le garde n'est pas en état d'arrestation
+    if etat != "en-arrestation" [
+      
+      ; cherche le pyromane le plus proche dans son rayon de détection
+      let cible min-one-of pyromanes with [mon-garde = nobody] in-radius rayon-detection-gardes [distance myself]
+      
+      ; si il y en a un : passe en état de poursuite
+      ifelse cible != nobody [
+        set etat "en-poursuite"
+      ] [
+        ; sinon recherche l'odeur la plus forte
+        let trace max-one-of neighbors [odeur-pyro]
+        let seuil-detection 1.0
+        
+        ; si il y a une odeur assez forte : passe en état de suivi d'odeur
+        ifelse [odeur-pyro] of trace > seuil-detection [
+          set etat "en-suivi-odeur"
+        ] [
+          ; sinon : passe en état de patrouille
+          set etat "en-patrouille"
+        ]
+      ]
+    ]
+    
+    ;; --------------- COMPORTEMENT EN FONCTION DE L'ETAT ---------------
+    
+    ;; ARRESTATION
+    if etat = "en-arrestation" [
+      
+      ; cherche le patch de base le plus proche
+      let base min-one-of patches with [est-base?] [distance myself]
+      
+      ; si il n'y est pas : s'y dirige
       ifelse not [est-base?] of patch-here [
         face base
         fd vitesse
-      ][
+      ] [
+        ; sinon il y est : retour en patrouille
         set etat "en-patrouille"
       ]
-    ] [
-    ; esquive du feu
-    let danger min-one-of patches in-radius 5 with [en-feu?] [distance myself]
-    if danger != nobody [
-      face danger
-      rt 180
-      fd vitesse
-    ]
-    ; détecte le pyromane le plus proche dans son rayon de détection, et le prend comme cible (nobody sinon) 
-      let cible min-one-of pyromanes with [mon-garde = nobody] in-radius rayon-detection-gardes [
-      distance myself
     ]
     
-    ; si il y a une cible, état de poursuite
-    ifelse cible != nobody [
-      set etat "en-poursuite"
-      face cible 
-      fd vitesse
-    ]
-    [
-      ; sinon recherche l'odeur la plus forte
-      let trace max-one-of neighbors [odeur-pyro]
-      let seuil-detection 1.0
+    ;; POURSUITE ET SUIVI D'ODEUR ET PATROUILLE (si il est affecté par le feu)
+    if etat = "en-poursuite" or etat = "en-suivi-odeur" or etat = "en-patrouille" and gardes-mort-feu [
       
-      ; si il y a une odeur assez forte : état de suivi d'odeur
-      ifelse [odeur-pyro] of trace > seuil-detection [
-        set etat "en-suivi-odeur"
-        face trace
-        fd vitesse
-      ] 
-      [
-        ; sinon état de patrouille : déplacements aléatoires
-        set etat "en-patrouille"
-        rt random 50 - random 50
+      ; cherche un patch de feu dans un rayon de 5
+      let danger min-one-of patches in-radius 5 with [en-feu?] [distance myself]
+      
+      ; si il y en a un : le fuit
+      if danger != nobody [
+        face danger
+        rt 180
         fd vitesse
       ]
     ]
-
-    ; si un pyromane est assez proche : il est attrapé
-      let pyromane-proche one-of pyromanes-here with [mon-garde = nobody]
-    if pyromane-proche != nobody [
-      ask pyromane-proche [ set etat "en-capture" set mon-garde myself ]
-      set etat "en-arrestation"
+    
+    ;; POURSUITE
+    if etat = "en-poursuite" [
+      
+      ; cherche le pyromane le plus proche
+      let cible min-one-of pyromanes with [mon-garde = nobody] in-radius rayon-detection-gardes [distance myself]
+      
+      ; si il y en à un : le poursuit
+      if cible != nobody [
+        face cible 
+        fd vitesse
+      ]
     ]
+    
+    ;; SUIVI D'ODEUR
+    if etat = "en-suivi-odeur" [
+      
+      ; cherche l'odeur la plus forte
+      let trace max-one-of neighbors [odeur-pyro]
+      
+      ; si il y en a une : la suit
+      if trace != nobody [
+        face trace
+        fd vitesse
+      ]
     ]
-    ; meurt s'il touche le feu
-    mort-feu
+    
+    ;; PATROUILLE
+    if etat = "en-patrouille" [
+      
+      ; déplacements aléatoires
+      rt random 50 - random 50
+      fd vitesse
+    ]
+    
+    ; si l'option est activée, il meurt au contact du feu
+    if gardes-mort-feu [mort-feu]
   ]
 end
 
 
-;;; procédure de mort en contact du feu
+;;; procédure de mort en contact du feu 
 to mort-feu
-  if [en-feu?] of patch-here [die]
+  
+  ; si le patch sur lequel il se trouve est en feu : mort
+  if [en-feu?] of patch-here [die] 
 end
 
 
 ;;; procédure qui fait se propager la forêt sur la terre
 to propagation-foret
-  ask patches with [est-foret? and not est-crame? and not en-pousse? and not est-base?] [ ; pour tous les patches de forêt ni en pousse, ni cramés, ni bases
-    ask neighbors with [est-terre?] [ ; pour tous leurs voisins qui sont terre
-      if random 100 < vitesse-propagation-foret [ ; pourcentage de chance de se propager dessus
+  
+  ; pour tous les patches de forêt ni en pousse, ni cramés, ni bases
+  ask patches with [est-foret? and not est-crame? and not en-pousse? and not est-base?] [ 
+    
+    ; pour tous leurs voisins qui sont terre
+    ask neighbors with [est-terre?] [ 
+      
+      ; chance de se propager dessus
+      if random 100 < vitesse-propagation-foret [
         set est-terre? false 
         set est-foret? true
         set en-pousse? true
@@ -413,8 +490,12 @@ end
 
 ;;; procédure qui fait grandir les patches de forêt en état de pousse 
 to pousse-foret
-  ask patches with [est-foret? and en-pousse?] [ ; pour tous les patches de forêt en pousse
-    set taille taille + 1 ; incrémente la taille
+  
+  ; pour tous les patches de forêt en pousse
+  ask patches with [est-foret? and en-pousse?] [
+    
+    ; incrémente la taille
+    set taille taille + 1 
     
     ; dégradé de couleur du vert clair au foncé en fonction de la taille
     let t (taille / taille-max) 
@@ -644,6 +725,9 @@ end
     <slider x="795" step="2" y="380" max="30" width="250" display="taille-base" height="50" min="0" direction="Horizontal" default="10.0" variable="taille-base"></slider>
     <slider x="1185" step="0.01" y="65" max="0.2" width="250" display="vitesse-simulation" height="50" min="0" direction="Horizontal" default="0.15" variable="vitesse-simulation"></slider>
     <slider x="1185" step="0.1" y="135" max="5" width="250" display="chance-declencher-feu" height="50" min="0" direction="Horizontal" default="2.0" variable="chance-declencher-feu" units="%"></slider>
+    <switch x="1265" y="230" height="40" on="false" variable="pompiers-mort-feu" display="pompiers-mort-feu" width="130" sizeVersion="0"></switch>
+    <switch x="1265" y="280" height="36" on="false" variable="pyromanes-mort-feu" display="pyromanes-mort-feu" width="136" sizeVersion="0"></switch>
+    <switch x="1270" y="320" height="40" on="false" variable="gardes-mort-feu" display="gardes-mort-feu" width="120" sizeVersion="0"></switch>
   </widgets>
   <info>## WHAT IS IT?
 
