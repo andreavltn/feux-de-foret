@@ -178,9 +178,6 @@ to go-pompiers
         ]
       ] 
     ]
-    
-    ; si l'option est activée, il meurt au contact du feu
-    if pompiers-mort-feu [mort-feu]
   ]
 end
 
@@ -513,6 +510,8 @@ end
 
 ;;; procédure qui fait repousser les patches de forêt cramés, et reprend la pousse de ceux éteints
 to gestion-crame-eteint
+  
+  ; pour tous les patches cramés
   ask patches with [est-crame?] [
     set cpt-repousse cpt-repousse - 1 ; décrémente le compteur de repousse
     
@@ -525,10 +524,11 @@ to gestion-crame-eteint
       ]
   ]
   
+  ; pour tous les patches éteints
   ask patches with [est-eteint?] [
-    set cpt-reprise-pousse cpt-reprise-pousse - 1 ; décrémente le compteur de repousse
+    set cpt-reprise-pousse cpt-reprise-pousse - 1 ; décrémente le compteur de reprise de la pousse
     
-    ; si le compteur est terminé : le patch redevient forêt en pousse de taille 0
+    ; si le compteur est terminé : le patch reprend sa pousse (et donc sa couleur)
       if (cpt-reprise-pousse <= 0) [
         set est-eteint? false
         set en-pousse? true
@@ -539,43 +539,50 @@ end
 
 ;;; procédure qui fait se propager le feu
 to propagation-feu
-  ask patches with [en-feu? and not est-crame?] [ ; pour tous les patches en feu non cramés 
-    if est-base? [
-      set durabilite-base durabilite-base - 1
+  
+  ; pour tous les patches en feu non cramés 
+  ask patches with [en-feu? and not est-crame?] [
+    
+    ; si ils font partie de la base
+    ifelse est-base? [
+      set durabilite-base durabilite-base - 1 ; décrémente la durabilité
+      
+      ; si elle atteint le min
       if durabilite-base < 0 [
-          set durabilite-base 0
-        ]
+        set durabilite-base 0 ; on la remet à 0 (dépassement de seuil)
       ]
-    ask neighbors with [(est-foret? or est-base?) and not en-feu? and not est-crame? and not en-pousse?] [ ; pour tous leurs voisins qui sont forêt de taille max, pas encore en feu, ni cramés
-        if random 100 < vitesse-propagation-feu [ ; pourcentage de chance de se propager dessus
-          set en-pousse? false 
-          set en-feu? true
-          set pcolor red ; le patch devient rouge  
+    ] [ 
+      
+      ; sinon c'est forêt, réduction progressive de la taille
+      set taille taille - 0.5
+    
+      ; si la taille min est atteinte, le patch est cramé
+      if taille <= 0 [ 
+        set taille 0 ; remet la taille à 0 (dépassement de seuil)
+        set en-feu? false 
+        set est-crame? true
+        set pcolor black
+        set cpt-repousse temps-repousse-crame
       ]
     ]
-    if not est-base? [
-    ; réduction progressive de la taille
-    set taille taille - 0.5
     
-    ; si la taille min est atteinte
-    if taille <= 0 [ 
-      set taille 0 ; remet la taille à 0 en cas de dépassement
-      set en-feu? false 
-      set est-crame? true 
+    ; propagation aux voisins
+    ask neighbors with [(est-foret? or est-base?) and not en-feu? and not est-crame? and not en-pousse?] [ 
+      
+      ; chance de se propager dessus
+      if random 100 < vitesse-propagation-feu [
+        set en-pousse? false 
+        set en-feu? true
+        set pcolor red ; le patch devient rouge  
+      ]
     ]
     
-    ; si le patch est en feu
-    if en-feu? [ 
-      ; dégradé de couleur du rouge clair au foncé en fonction de la taille
+    ; si c'est un patch de forêt en feu
+    if en-feu? and not est-base? [ 
+      
+      ; dégradé de couleur : plus foncé = plus brulé
       let t 1 - (taille / taille-max) 
       set pcolor red - (t * 4) 
-    ] 
-    
-    ; si le patch est cramé : couleur noire
-    if est-crame? [
-      set pcolor black
-      set cpt-repousse temps-repousse-crame
-    ] 
     ]
   ]
 end
@@ -583,23 +590,34 @@ end
 
 ;;; procédure qui met à jour l'état de la base
 to gestion-base
+  
+  ; pour tous les patches de la base
   ask patches with [est-base?] [
     
+    ; calcul du pourcentage de durabilité restant
     let pourcentage-base durabilite-base / durabilite-base-max
+    
+    ; si 0% : détruit (noir)
     ifelse durabilite-base <= 0 [
       set etat-base "détruit"
       set pcolor black
     ] [
-      ifelse pourcentage-base >= 0.76 [
-        set etat-base "indemne"
-        set pcolor blue
+      
+      ; sinon si entre 0% et 33% : critique (rouge)
+      ifelse pourcentage-base <= 0.33 [
+        set etat-base "critique"
+        set pcolor red
       ] [
-        ifelse pourcentage-base >= 0.26 [
+        
+        ; sinon si entre 33% et 66%: endommagé (violet)
+        ifelse pourcentage-base <= 0.66 [
           set etat-base "endommagé"
           set pcolor violet
         ] [
-          set etat-base "critique"
-          set pcolor red
+          
+          ; sinon si entre 66% et 100% : indemne (bleu)
+          set etat-base "indemne"
+          set pcolor blue
         ]
       ]
     ]
@@ -609,43 +627,54 @@ end
 
 ;;; procédure qui diffuse et fait s'évaporer l'odeur des pyromanes 
 to gestion-odeur
-  diffuse odeur-pyro 0.2 ; diffusion de l'odeur sur les patches voisins
+  
+  ; diffusion de l'odeur sur les patches voisins
+  diffuse odeur-pyro 0.2
+  
+  ; évaporation de l'odeur progressive 
   ask patches [
-    set odeur-pyro odeur-pyro - 5 ; évaporation de l'odeur progressive
+    set odeur-pyro odeur-pyro - 5 
   ]
+end
+
+;;; procédure qui définit si il y a un état d'urgence ou non (pour les pompiers)
+to gestion-urgence
+  
+  ; si un patche de la base non détruit est en feu : état d'urgence
+  set urgence-base? any? patches with [est-base? and en-feu? and durabilite-base > 0]
 end
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 to setup
   clear-all
+  set urgence-base? false ; réinitialisation de l'état d'urgence
+  
   ask patches [
     
     ; 1) initialisation des variables des patches
     initialisation-variables-patches 
  
-    ; 2) création de la base
+    ; 2) création de la base (de taille "taille-base")
     if (pxcor >= (0 - taille-base / 2) and pxcor < (0 + taille-base / 2) and pycor >= (0 - taille-base / 2) and pycor < (0 + taille-base / 2)) [
       set est-base? true 
-      set etat-base "indemne"
-      set durabilite-base durabilite-base-max
+      set etat-base "indemne" ; état indemne
+      set durabilite-base durabilite-base-max ; durabilité max
     ]
     
-    ; 3) sinon il est aléatoirement forêt ou terre avec un pourcentage choisi
+    ; 3) pourcentage de forêt/terre sur tout le reste
     if not est-base? [
       ifelse random 100 < pourcentage-foret [
         set est-foret? true
-        set taille taille-max 
+        set taille taille-max ; taille max pour la forêt
       ] [
         set est-terre? true
       ]
     ]
    
-    ; 4) mise à jour de la couleur des patchs en fonction de leur type
+    ; 4) mise à jour de la couleur des patches en fonction de leur type
     set-color-patches
   ]
-  ; pour l'état d'urgence
-  set urgence-base? false
   
   ; 5) création des pompiers
   create-pompiers nombre-pompiers [
@@ -667,7 +696,7 @@ to setup
     placer-pyromane-hors-de-la-base self ; apparait hors de la base
     set vitesse 3
     set etat "en-pyromanie" ; état de pyromanie au départ
-    set mon-garde nobody
+    set mon-garde nobody ; pas de garde qui le capture
   ]
   
   ; 7) création des gardes
@@ -676,7 +705,7 @@ to setup
     set shape "person"
     set size 3
     placer-troupe-dans-la-base self ; apparait dans la base
-    set vitesse 2
+    set vitesse 2 ; vitesse un peu plus lente que les autres
     set etat "en-patrouille" ; état de patrouille au départ
   ]
   
@@ -685,8 +714,7 @@ end
 
 
 to go
-  ; définit l'état d'urgence
-  set urgence-base? any? patches with [est-base? and en-feu? and durabilite-base > 0]
+  
   ; comportement des agents
   go-pompiers
   go-pyromanes
@@ -702,7 +730,9 @@ to go
   ; gestion des odeurs
   gestion-odeur
   
-  wait (0.2 - vitesse-simulation)
+  ; gestion de l'état d'urgence
+  gestion-urgence
+  
   tick
 end
 ]]></code>
@@ -723,9 +753,7 @@ end
     <button x="10" y="365" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="90">setup</button>
     <button x="140" y="365" height="40" disableUntilTicks="false" forever="true" kind="Observer" width="85">go</button>
     <slider x="795" step="2" y="380" max="30" width="250" display="taille-base" height="50" min="0" direction="Horizontal" default="10.0" variable="taille-base"></slider>
-    <slider x="1185" step="0.01" y="65" max="0.2" width="250" display="vitesse-simulation" height="50" min="0" direction="Horizontal" default="0.15" variable="vitesse-simulation"></slider>
     <slider x="1185" step="0.1" y="135" max="5" width="250" display="chance-declencher-feu" height="50" min="0" direction="Horizontal" default="2.0" variable="chance-declencher-feu" units="%"></slider>
-    <switch x="1265" y="230" height="40" on="false" variable="pompiers-mort-feu" display="pompiers-mort-feu" width="130" sizeVersion="0"></switch>
     <switch x="1265" y="280" height="36" on="false" variable="pyromanes-mort-feu" display="pyromanes-mort-feu" width="136" sizeVersion="0"></switch>
     <switch x="1270" y="320" height="40" on="false" variable="gardes-mort-feu" display="gardes-mort-feu" width="120" sizeVersion="0"></switch>
   </widgets>
