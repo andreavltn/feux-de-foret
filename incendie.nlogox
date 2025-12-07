@@ -1,15 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<model version="NetLogo 7.0.2" snapToGrid="true">
+<model version="NetLogo 7.0.0" snapToGrid="true">
   <code><![CDATA[globals [
-  urgence-base?
-  arrestations-totales
-  extinctions-totales
-  extinctions-tick
-  total-foret
-  pourcentage-foret-intacte
-  durabilite-totale-base-max
-  durabilite-totale-base
+  urgence-base? ; true si il y a urgence à la base (au moins un patch de base en train de bruler)
+  arrestations-totales ; nombre total d'arrestations de pyromanes par les gardes (pour les statistiques)
+  extinctions-totales ; nombre total d'extinctions de feu par les pompiers (pour les statistiques)
+  extinctions-tick ; nombre d'extinctions de feu par les pompiers dans le tick en cours (pour les statistiques)
+  total-foret ; nombre total de patches de forêt sur la carte (pour les statistiques)
+  pourcentage-foret-intacte ; pourcentage de la forêt non brulée/cramée (pour les statistiques)
+  durabilite-totale-base-max ; durabilité totale maximum de la base (pour les statistiques)
+  durabilite-totale-base ; durabilité totale actuelle de la base (pour les statistiques) 
 ]
+
 breed [ pompiers pompier]
 breed [ gardes garde ]
 breed [ pyromanes pyromane ]
@@ -673,9 +674,6 @@ end
 
 to setup
   clear-all
-  set urgence-base? false ; réinitialisation de l'état d'urgence
-  set arrestations-totales 0 ; compteur d'arrestations
-  set extinctions-totales 0 ; compteur de patches éteint par les pompiers
 
   ask patches [
     
@@ -735,16 +733,29 @@ to setup
     set vitesse 2 ; vitesse un peu plus lente que les autres
     set etat "en-patrouille" ; état de patrouille au départ
   ]
-  set total-foret count patches with [not est-base?] ; compteur de patches forêt
-  let nombre-patches-base count patches with [est-base?] ; compteur patches base
-  set durabilite-totale-base-max (nombre-patches-base * durabilite-base-max) ; compteur de durabilité max de la base
+  
+  ; 8) initialisation des variables pour les statistiques
+  
+  set urgence-base? false ; réinitialisation de l'état d'urgence
+  set arrestations-totales 0 ; compteur d'arrestations
+  set extinctions-totales 0 ; compteur de patches éteint par les pompiers
+  
+  ; compteur du nombre total de patches de forêt
+  set total-foret count patches with [not est-base?] 
+  
+  ; compteur de la durabilité maximum de la base
+  let nombre-patches-base count patches with [est-base?] 
+  set durabilite-totale-base-max (nombre-patches-base * durabilite-base-max)
+  
   reset-ticks
 end
 
 
 to go
   
-  set extinctions-tick 0 ; pour voir le nombre d'extinctions par tick
+  ; réinitialisation du nombre d'extinctions par tick (pour les statistiques)
+  set extinctions-tick 0 
+  
   ; comportement des agents
   go-pompiers
   go-pyromanes
@@ -756,13 +767,16 @@ to go
   propagation-feu
   gestion-crame-eteint
   gestion-base
-  calcul-pourcentage-foret
-  calcul-pourcentage-durabilite
+ 
   ; gestion des odeurs
   gestion-odeur
   
   ; gestion de l'état d'urgence
   gestion-urgence
+  
+  ; calculs pour les statistiques
+  calcul-pourcentage-foret
+  calcul-pourcentage-durabilite
   
   tick
 end
