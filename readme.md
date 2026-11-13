@@ -1,5 +1,4 @@
-Rapport de Projet : Incendie et propagation du feu
-
+# Simulation des feux de forêt
 ## Présentation
 ### Contexte
 Ce projet s’inscrit dans le cadre de la Programmation Agent, nous allons étudier la dynamique d’un incendie de forêt et les interactions entre la propagation du feu et l’environnement avec comme agents : les pompiers, les gardes et les pyromanes.
