@@ -61,21 +61,12 @@ Pour finir nous avons rajouté des graphes et des monitor pour mieux voir commen
 
 ---
 
-## Gestion projet
-### Répartition des tâches
-Au départ, nous avons décidé ensemble de la direction de base du projet via une sorte de brainstorming avec un bloc note. Puis nous avons commencé chacun de notre côté en faisant un squelette du projet. Ensuite nous avons choisi la version qui nous plaisait le mieux, et l’avons améliorée au fur et à mesure en rajoutant chacun notre tour des fonctionnalités, et en corrigeant celles des autres après communication. Nous avons utilisé le gestionnaire des sources de gitlab pour rester à jour, et permettre d’expliquer ce qui a changé entre chaque version.
-
-### Difficultés
-Le feu est de loin la plus grand difficulté que nous avons pu rencontrer, il est très instable de base et nous avons passé du temps à discuter de comment faire pour le gérer au mieux. Le changement avec le plus d’effet fut de changer l’impact des pompiers, au départ éteindre un patch, puis un cône en face et nous avons finalement opter pour un effet en rayon autour d’eux, car les deux premières méthodes n’étaient pas concluantes. Les interactions des agents étaient aussi un défi, nous avons eu du mal à gérer le sens des priorités des états, faire en sorte que chaque agent ayant les mêmes états ne se gênent pas, en particulier le système de capture. Il arrivait que certains agents se bloquaient complètement entre deux états, ou n’arrivaient plus à repasser dans l’état principal car une condition les en empêchait.
-
----
-
 ## Processus d'utilisation
 
 Pour exécuter et utiliser cette simulation NetLogo :
 
 1. **Prérequis :** Téléchargez et installez l’application [NetLogo](https://ccl.northwestern.edu/netlogo/) (version 6.x recommandée).
-2. **Récupération du projet :** Clonez ou téléchargez ce dépôt contenant le fichier source du modèle NetLogo (`.nlogo`).
+2. **Récupération du projet :** Téléchargez le fichier `incendie.nlogox` depuis l'onglet [Releases](https://github.com/andreavltn/feux-de-foret/releases/tag/final).
 3. **Lancement :**
    - Ouvrez le logiciel NetLogo.
    - Chargez le fichier de modèle du projet depuis l'application via le menu *File > Open*.
